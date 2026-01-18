@@ -185,33 +185,78 @@ export default function Home() {
         return;
       }
 
-      // 現在の方向に沿ってピーク位置を更新
+      // 現在の方向に沿ってピーク位置を更新（その軸のみ）
       const currentDir = lastDirection.current;
-      if (currentDir === "↑" && e.clientY < peakPos.current.y) {
-        peakPos.current = { x: e.clientX, y: e.clientY };
-      } else if (currentDir === "↓" && e.clientY > peakPos.current.y) {
-        peakPos.current = { x: e.clientX, y: e.clientY };
-      } else if (currentDir === "→" && e.clientX > peakPos.current.x) {
-        peakPos.current = { x: e.clientX, y: e.clientY };
-      } else if (currentDir === "←" && e.clientX < peakPos.current.x) {
-        peakPos.current = { x: e.clientX, y: e.clientY };
+      const isVertical = currentDir === "↑" || currentDir === "↓";
+
+      // 現在の方向に進んでいるかどうか
+      let isAdvancing = false;
+
+      if (isVertical) {
+        if (currentDir === "↑" && e.clientY < peakPos.current.y) {
+          peakPos.current = { ...peakPos.current, y: e.clientY };
+          isAdvancing = true;
+        } else if (currentDir === "↓" && e.clientY > peakPos.current.y) {
+          peakPos.current = { ...peakPos.current, y: e.clientY };
+          isAdvancing = true;
+        }
+      } else {
+        if (currentDir === "→" && e.clientX > peakPos.current.x) {
+          peakPos.current = { ...peakPos.current, x: e.clientX };
+          isAdvancing = true;
+        } else if (currentDir === "←" && e.clientX < peakPos.current.x) {
+          peakPos.current = { ...peakPos.current, x: e.clientX };
+          isAdvancing = true;
+        }
       }
 
-      // ピーク位置からの逆方向への移動を検出
-      const dxFromPeak = e.clientX - peakPos.current.x;
-      const dyFromPeak = e.clientY - peakPos.current.y;
+      // 進行中はstartPosも更新（直交方向の累積を防ぐ）
+      if (isAdvancing) {
+        setStartPos({ x: e.clientX, y: e.clientY });
+      }
 
-      // 方向転換のしきい値（小さくして反応を良くする）
-      const turnThreshold = Math.max(threshold * 0.5, 15);
+      // 方向転換の検出
+      const turnThreshold = Math.max(threshold * 0.4, 12);
+      let newDirection: Direction | null = null;
 
-      const newDirection = getDirection(dxFromPeak, dyFromPeak, turnThreshold, angleTolerance);
+      if (isVertical) {
+        const dyFromPeak = e.clientY - peakPos.current.y;
+        const dxFromStart = e.clientX - startPos.x;
+        const dyFromStart = Math.abs(e.clientY - startPos.y);
 
-      // 新しい方向が検出され、現在の方向と異なる場合
+        // 逆方向への戻りを検出
+        if (currentDir === "↑" && dyFromPeak > turnThreshold) {
+          newDirection = "↓";
+        } else if (currentDir === "↓" && dyFromPeak < -turnThreshold) {
+          newDirection = "↑";
+        }
+        // 横方向への転換: 横移動が縦移動より大きい場合のみ
+        else if (Math.abs(dxFromStart) > turnThreshold && Math.abs(dxFromStart) > dyFromStart * angleTolerance) {
+          newDirection = dxFromStart > 0 ? "→" : "←";
+        }
+      } else {
+        const dxFromPeak = e.clientX - peakPos.current.x;
+        const dyFromStart = e.clientY - startPos.y;
+        const dxFromStart = Math.abs(e.clientX - startPos.x);
+
+        // 逆方向への戻りを検出
+        if (currentDir === "→" && dxFromPeak < -turnThreshold) {
+          newDirection = "←";
+        } else if (currentDir === "←" && dxFromPeak > turnThreshold) {
+          newDirection = "→";
+        }
+        // 縦方向への転換: 縦移動が横移動より大きい場合のみ
+        else if (Math.abs(dyFromStart) > turnThreshold && Math.abs(dyFromStart) > dxFromStart * angleTolerance) {
+          newDirection = dyFromStart > 0 ? "↓" : "↑";
+        }
+      }
+
+      // 新しい方向が検出された場合
       if (newDirection && newDirection !== currentDir) {
         lastDirection.current = newDirection;
         gestureRef.current = [...gestureRef.current, newDirection];
         setCurrentGesture(gestureRef.current);
-        // 新しい方向の起点としてピーク位置をリセット
+        // 新しい方向の起点をリセット
         peakPos.current = { x: e.clientX, y: e.clientY };
         setStartPos({ x: e.clientX, y: e.clientY });
       }
