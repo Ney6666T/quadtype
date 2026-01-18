@@ -60,19 +60,28 @@ const DIRECTION_VECTORS: Record<Direction, { x: number; y: number }> = {
   "←": { x: -1, y: 0 },
 };
 
-const THRESHOLD = 30;
+const DEFAULT_THRESHOLD = 30;
+const DEFAULT_ANGLE_TOLERANCE = 1.5; // 1.0 = 45度、2.0 = より垂直/水平寄り
 
-function getDirection(dx: number, dy: number): Direction | null {
+function getDirection(
+  dx: number,
+  dy: number,
+  threshold: number,
+  angleTolerance: number
+): Direction | null {
   const absDx = Math.abs(dx);
   const absDy = Math.abs(dy);
 
-  if (absDx < THRESHOLD && absDy < THRESHOLD) return null;
+  if (absDx < threshold && absDy < threshold) return null;
 
-  if (absDy > absDx) {
+  // angleTolerance倍の差があれば判定（遊びを追加）
+  if (absDy > absDx * angleTolerance) {
     return dy < 0 ? "↑" : "↓";
-  } else {
+  } else if (absDx > absDy * angleTolerance) {
     return dx > 0 ? "→" : "←";
   }
+
+  return null; // どちらとも言えない場合は判定しない
 }
 
 const REFERENCE_DATA = [
@@ -112,6 +121,13 @@ const REFERENCE_DATA = [
   { title: "4入力", items: [["?", "↓↑↓↑"]] },
 ];
 
+interface LastGestureInfo {
+  gesture: Direction[];
+  char: string | null;
+  isShift: boolean;
+  timestamp: number;
+}
+
 export default function Home() {
   const [text, setText] = useState("");
   const [currentGesture, setCurrentGesture] = useState<Direction[]>([]);
@@ -119,10 +135,17 @@ export default function Home() {
   const [isShiftMode, setIsShiftMode] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
+  const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD);
+  const [angleTolerance, setAngleTolerance] = useState(DEFAULT_ANGLE_TOLERANCE);
+  const [showSettings, setShowSettings] = useState(false);
+  const [lastGesture, setLastGesture] = useState<LastGestureInfo | null>(null);
   const lastDirection = useRef<Direction | null>(null);
   const gestureRef = useRef<Direction[]>([]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    // 設定パネル内のクリックは無視
+    if ((e.target as HTMLElement).closest("[data-settings]")) return;
+
     setIsDragging(true);
     setStartPos({ x: e.clientX, y: e.clientY });
     setCurrentPos({ x: e.clientX, y: e.clientY });
@@ -141,7 +164,7 @@ export default function Home() {
 
       const dx = e.clientX - startPos.x;
       const dy = e.clientY - startPos.y;
-      const direction = getDirection(dx, dy);
+      const direction = getDirection(dx, dy, threshold, angleTolerance);
 
       if (direction && direction !== lastDirection.current) {
         lastDirection.current = direction;
@@ -155,7 +178,7 @@ export default function Home() {
         setStartPos({ x: e.clientX, y: e.clientY });
       }
     },
-    [isDragging, startPos]
+    [isDragging, startPos, threshold, angleTolerance]
   );
 
   const handlePointerUp = useCallback(() => {
@@ -180,19 +203,30 @@ export default function Home() {
       setText((prev) => prev + finalChar);
     }
 
+    // 余韻表示用に最後のジェスチャーを保存
+    if (gesture.length > 0) {
+      setLastGesture({
+        gesture: [...gesture],
+        char: char ? (shift ? char.toUpperCase() : char) : null,
+        isShift: shift,
+        timestamp: Date.now(),
+      });
+    }
+
     setCurrentGesture([]);
     setIsShiftMode(false);
     gestureRef.current = [];
   }, [isDragging]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === "Backspace") {
-      setText((prev) => prev.slice(0, -1));
-    } else if (e.key === " ") {
-      setText((prev) => prev + " ");
-      e.preventDefault();
+  // 余韻表示のフェードアウト
+  useEffect(() => {
+    if (lastGesture) {
+      const timer = setTimeout(() => {
+        setLastGesture(null);
+      }, 1500); // 1.5秒後に消える
+      return () => clearTimeout(timer);
     }
-  }, []);
+  }, [lastGesture]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -208,7 +242,6 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, []);
 
-  const gestureDisplay = currentGesture.join("");
   const previewChar = (() => {
     if (currentGesture.length === 0) return null;
     let lookupGesture = currentGesture;
@@ -222,6 +255,15 @@ export default function Home() {
     return null;
   })();
 
+  // 表示するジェスチャー情報（ドラッグ中 or 余韻）
+  const displayGesture = isDragging ? currentGesture : lastGesture?.gesture ?? [];
+  const displayChar = isDragging ? previewChar : lastGesture?.char ?? null;
+  const displayShift = isDragging ? isShiftMode : lastGesture?.isShift ?? false;
+  const showGestureDisplay = isDragging || lastGesture !== null;
+
+  // 余韻のフェードアウト用のopacity
+  const gestureOpacity = isDragging ? 1 : lastGesture ? 0.6 : 0;
+
   return (
     <div
       className="relative flex min-h-screen flex-col select-none overflow-hidden bg-zinc-900 text-white"
@@ -229,7 +271,6 @@ export default function Home() {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      onKeyDown={handleKeyDown}
       tabIndex={0}
       style={{ touchAction: "none" }}
     >
@@ -248,38 +289,118 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Settings toggle button */}
+      <button
+        data-settings
+        onClick={() => setShowSettings(!showSettings)}
+        className="pointer-events-auto absolute right-4 top-4 z-30 rounded-lg bg-zinc-800 p-2 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-5 w-5"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+        >
+          <path
+            fillRule="evenodd"
+            d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+
+      {/* Settings panel */}
+      {showSettings && (
+        <div
+          data-settings
+          className="pointer-events-auto absolute right-4 top-14 z-30 w-72 rounded-lg border border-zinc-700 bg-zinc-800/95 p-4 backdrop-blur-sm"
+        >
+          <h3 className="mb-4 font-bold text-zinc-200">設定</h3>
+
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm text-zinc-400">
+                移動距離しきい値: {threshold}px
+              </label>
+              <input
+                type="range"
+                min="10"
+                max="80"
+                value={threshold}
+                onChange={(e) => setThreshold(Number(e.target.value))}
+                className="w-full accent-blue-500"
+              />
+              <p className="mt-1 text-xs text-zinc-500">
+                小さいほど少ない移動で方向判定
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm text-zinc-400">
+                方向判定の遊び: {angleTolerance.toFixed(1)}
+              </label>
+              <input
+                type="range"
+                min="1.0"
+                max="3.0"
+                step="0.1"
+                value={angleTolerance}
+                onChange={(e) => setAngleTolerance(Number(e.target.value))}
+                className="w-full accent-blue-500"
+              />
+              <p className="mt-1 text-xs text-zinc-500">
+                大きいほど斜め移動を許容（上下左右判定が緩く）
+              </p>
+            </div>
+
+            <button
+              onClick={() => {
+                setThreshold(DEFAULT_THRESHOLD);
+                setAngleTolerance(DEFAULT_ANGLE_TOLERANCE);
+              }}
+              className="w-full rounded bg-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:bg-zinc-600"
+            >
+              デフォルトに戻す
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Background reference guide */}
       <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-auto p-4">
-        <div className="grid max-w-5xl grid-cols-2 gap-4 opacity-30 md:grid-cols-3">
+        <div className="grid max-w-5xl grid-cols-2 gap-4 md:grid-cols-3">
           {REFERENCE_DATA.map((section) => (
-            <div key={section.title} className="rounded-lg bg-zinc-800/50 p-3">
-              <h3 className="mb-2 text-xs font-bold text-zinc-400">
+            <div key={section.title} className="rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3">
+              <h3 className="mb-2 text-xs font-bold text-blue-400/70">
                 {section.title}
               </h3>
               <div className="grid grid-cols-3 gap-1 text-xs">
                 {section.items.map(([char, gesture]) => (
                   <div
                     key={char + gesture}
-                    className="flex items-center justify-between gap-1 rounded bg-zinc-700/50 px-1.5 py-0.5"
+                    className="flex items-center justify-between gap-1 rounded border border-zinc-600/30 bg-zinc-700/30 px-1.5 py-0.5"
                   >
-                    <span className="font-bold text-zinc-300">{char}</span>
-                    <span className="text-zinc-500">{gesture}</span>
+                    <span className="font-bold text-emerald-400/80">{char}</span>
+                    <span className="text-zinc-400">{gesture}</span>
                   </div>
                 ))}
               </div>
             </div>
           ))}
-          <div className="rounded-lg bg-zinc-800/50 p-3">
-            <h3 className="mb-2 text-xs font-bold text-zinc-400">シフト</h3>
-            <p className="text-xs text-zinc-500">↑ + パターン = 大文字</p>
+          <div className="rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3">
+            <h3 className="mb-2 text-xs font-bold text-blue-400/70">シフト</h3>
+            <p className="text-xs text-amber-400/70">↑ + パターン = 大文字</p>
           </div>
         </div>
       </div>
 
       {/* Current gesture display in center */}
       <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          {isDragging && (
+        <div
+          className="flex flex-col items-center gap-4 transition-opacity duration-500"
+          style={{ opacity: gestureOpacity }}
+        >
+          {showGestureDisplay && (
             <>
               {/* Direction indicator */}
               <div className="relative h-40 w-40">
@@ -289,8 +410,8 @@ export default function Home() {
                 {/* Direction arrows */}
                 {(["↑", "↓", "→", "←"] as Direction[]).map((dir) => {
                   const vec = DIRECTION_VECTORS[dir];
-                  const isActive = currentGesture[currentGesture.length - 1] === dir;
-                  const wasUsed = currentGesture.includes(dir);
+                  const isActive = displayGesture[displayGesture.length - 1] === dir;
+                  const wasUsed = displayGesture.includes(dir);
                   return (
                     <div
                       key={dir}
@@ -314,13 +435,13 @@ export default function Home() {
 
                 {/* Gesture trail line */}
                 <svg className="absolute inset-0 h-full w-full overflow-visible">
-                  {currentGesture.length > 0 && (
+                  {displayGesture.length > 0 && (
                     <path
                       d={(() => {
                         let path = "M 80 80";
                         let x = 80,
                           y = 80;
-                        for (const dir of currentGesture) {
+                        for (const dir of displayGesture) {
                           const vec = DIRECTION_VECTORS[dir];
                           x += vec.x * 30;
                           y += vec.y * 30;
@@ -328,7 +449,7 @@ export default function Home() {
                         }
                         return path;
                       })()}
-                      stroke={isShiftMode ? "#f59e0b" : "#3b82f6"}
+                      stroke={displayShift ? "#f59e0b" : "#3b82f6"}
                       strokeWidth="3"
                       fill="none"
                       strokeLinecap="round"
@@ -342,26 +463,26 @@ export default function Home() {
               <div className="flex flex-col items-center gap-2">
                 <div
                   className={`text-5xl font-bold tracking-wider ${
-                    isShiftMode ? "text-amber-400" : "text-blue-400"
+                    displayShift ? "text-amber-400" : "text-blue-400"
                   }`}
                 >
-                  {gestureDisplay || "..."}
+                  {displayGesture.join("") || "..."}
                 </div>
-                {isShiftMode && (
+                {displayShift && (
                   <div className="rounded bg-amber-500/20 px-2 py-1 text-sm text-amber-400">
                     SHIFT
                   </div>
                 )}
-                {previewChar && (
+                {displayChar && (
                   <div className="mt-2 text-6xl font-bold text-green-400">
-                    {previewChar}
+                    {displayChar}
                   </div>
                 )}
               </div>
             </>
           )}
 
-          {!isDragging && (
+          {!showGestureDisplay && (
             <div className="text-center text-zinc-500">
               <p className="text-lg">画面をドラッグして入力</p>
               <p className="mt-1 text-sm">
