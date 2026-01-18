@@ -51,6 +51,8 @@ const GESTURE_MAP: Record<string, string> = {
   "←→←": "!",
   // 4入力
   "↓↑↓↑": "?",
+  "→↓←↑": " ",  // 右回り四角 = スペース
+  "→↑←↓": "\b", // 左回り四角 = バックスペース
 };
 
 const DIRECTION_VECTORS: Record<Direction, { x: number; y: number }> = {
@@ -118,7 +120,7 @@ const REFERENCE_DATA = [
       [",", "←→↑"], [".", "←→↓"], ["!", "←→←"],
     ],
   },
-  { title: "4入力", items: [["?", "↓↑↓↑"]] },
+  { title: "4入力", items: [["?", "↓↑↓↑"], ["␣", "→↓←↑"], ["⌫", "→↑←↓"]] },
 ];
 
 interface LastGestureInfo {
@@ -235,15 +237,23 @@ export default function Home() {
     const char = GESTURE_MAP[gestureKey];
 
     if (char) {
-      const finalChar = shift ? char.toUpperCase() : char;
-      setText((prev) => prev + finalChar);
+      if (char === "\b") {
+        // バックスペース
+        setText((prev) => prev.slice(0, -1));
+      } else {
+        const finalChar = shift ? char.toUpperCase() : char;
+        setText((prev) => prev + finalChar);
+      }
     }
 
     // 余韻表示用に最後のジェスチャーを保存
     if (gesture.length > 0) {
+      let displayChar = char;
+      if (char === " ") displayChar = "␣";
+      else if (char === "\b") displayChar = "⌫";
       setLastGesture({
         gesture: [...gesture],
-        char: char ? (shift ? char.toUpperCase() : char) : null,
+        char: displayChar ? (shift && displayChar.length === 1 && /[a-z]/.test(displayChar) ? displayChar.toUpperCase() : displayChar) : null,
         isShift: shift,
         timestamp: Date.now(),
       });
@@ -287,8 +297,10 @@ export default function Home() {
       lookupGesture = currentGesture.slice(1);
     }
     const char = GESTURE_MAP[lookupGesture.join("")];
-    if (char) return shift ? char.toUpperCase() : char;
-    return null;
+    if (!char) return null;
+    if (char === " ") return "␣";
+    if (char === "\b") return "⌫";
+    return shift ? char.toUpperCase() : char;
   })();
 
   // 表示するジェスチャー情報（ドラッグ中 or 余韻）
