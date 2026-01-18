@@ -1,36 +1,105 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# QuadType
 
-## Getting Started
+マウスドラッグの方向（↑↓→←）を組み合わせて文字を入力するジェスチャー入力システム。
 
-First, run the development server:
+## 基本ルール
+
+- **連続する同じ方向は禁止**（例: ↑↑ は無効）
+- **↑始まりはシフト（大文字化）専用**
+- クリックを離した時点で1文字確定
+
+## 入力パターン
+
+### 1入力（3文字）
+
+| 文字 | ジェスチャー |
+|:---:|:---:|
+| A | ↓ |
+| I | → |
+| U | ← |
+
+### 2入力（9文字）
+
+| 文字 | ジェスチャー | 文字 | ジェスチャー | 文字 | ジェスチャー |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| E | ↓↑ | K | →↑ | M | ←↑ |
+| O | ↓→ | S | →↓ | T | ←↓ |
+| N | ↓← | H | →← | R | ←→ |
+
+### 3入力 - 子音（↓始まり）
+
+| 文字 | ジェスチャー | 文字 | ジェスチャー | 文字 | ジェスチャー |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| Y | ↓↑↓ | F | ↓→↑ | D | ↓←↑ |
+| W | ↓↑→ | Z | ↓→↓ | J | ↓←↓ |
+| G | ↓↑← | B | ↓→← | P | ↓←→ |
+
+### 3入力 - 数字（→始まり）
+
+| 数字 | ジェスチャー | 数字 | ジェスチャー | 数字 | ジェスチャー |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| 1 | →↑↓ | 4 | →↓↑ | 7 | →←↑ |
+| 2 | →↑→ | 5 | →↓→ | 8 | →←↓ |
+| 3 | →↑← | 6 | →↓← | 9 | →←→ |
+
+### 3入力 - その他（←始まり）
+
+| 文字 | ジェスチャー | 文字 | ジェスチャー | 記号 | ジェスチャー |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| 0 | ←↑↓ | V | ←↓↑ | , | ←→↑ |
+| C | ←↑→ | X | ←↓→ | . | ←→↓ |
+| L | ←↑← | Q | ←↓← | ! | ←→← |
+
+### 4入力
+
+| 機能 | ジェスチャー | 説明 |
+|:---:|:---:|:---|
+| ? | ↓↑↓↑ | クエスチョンマーク |
+| ␣ | →↓←↑ | スペース（右回り四角） |
+| ⌫ | →↑←↓ | バックスペース（左回り四角） |
+
+### シフト（大文字化）
+
+↑ + 文字パターン = 大文字
+
+例：
+- 大文字 A = `↑↓`
+- 大文字 I = `↑→`
+
+## キーボード操作
+
+- **スペースキー**: 空白入力
+- **Backspace**: 削除
+
+## 設定
+
+右上の歯車アイコンから調整可能：
+
+- **移動距離しきい値**: 方向判定に必要な移動距離（小さいほど敏感）
+- **方向判定の遊び**: 斜め移動の許容度（大きいほど上下左右の判定が緩い）
+
+## 開発
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## ビルド
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## GitHub Pages デプロイ
 
-## Learn More
+1. GitHubにプッシュ
+2. リポジトリ設定 → Pages → Source を「GitHub Actions」に変更
+3. mainブランチへのプッシュで自動デプロイ
 
-To learn more about Next.js, take a look at the following resources:
+## 技術スタック
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Next.js 16
+- React 19
+- TypeScript
+- Tailwind CSS 4
