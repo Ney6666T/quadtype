@@ -141,6 +141,7 @@ export default function Home() {
   const [lastGesture, setLastGesture] = useState<LastGestureInfo | null>(null);
   const lastDirection = useRef<Direction | null>(null);
   const gestureRef = useRef<Direction[]>([]);
+  const peakPos = useRef({ x: 0, y: 0 }); // 現在の方向での最も遠い位置
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     // 設定パネル内のクリックは無視
@@ -149,6 +150,7 @@ export default function Home() {
     setIsDragging(true);
     setStartPos({ x: e.clientX, y: e.clientY });
     setCurrentPos({ x: e.clientX, y: e.clientY });
+    peakPos.current = { x: e.clientX, y: e.clientY };
     setCurrentGesture([]);
     setIsShiftMode(false);
     lastDirection.current = null;
@@ -164,17 +166,51 @@ export default function Home() {
 
       const dx = e.clientX - startPos.x;
       const dy = e.clientY - startPos.y;
-      const direction = getDirection(dx, dy, threshold, angleTolerance);
 
-      if (direction && direction !== lastDirection.current) {
-        lastDirection.current = direction;
-        gestureRef.current = [...gestureRef.current, direction];
-        setCurrentGesture(gestureRef.current);
+      // 最初の方向判定（まだ方向が決まっていない場合）
+      if (lastDirection.current === null) {
+        const direction = getDirection(dx, dy, threshold, angleTolerance);
+        if (direction) {
+          lastDirection.current = direction;
+          gestureRef.current = [direction];
+          setCurrentGesture(gestureRef.current);
+          peakPos.current = { x: e.clientX, y: e.clientY };
 
-        if (gestureRef.current.length === 1 && direction === "↑") {
-          setIsShiftMode(true);
+          if (direction === "↑") {
+            setIsShiftMode(true);
+          }
         }
+        return;
+      }
 
+      // 現在の方向に沿ってピーク位置を更新
+      const currentDir = lastDirection.current;
+      if (currentDir === "↑" && e.clientY < peakPos.current.y) {
+        peakPos.current = { x: e.clientX, y: e.clientY };
+      } else if (currentDir === "↓" && e.clientY > peakPos.current.y) {
+        peakPos.current = { x: e.clientX, y: e.clientY };
+      } else if (currentDir === "→" && e.clientX > peakPos.current.x) {
+        peakPos.current = { x: e.clientX, y: e.clientY };
+      } else if (currentDir === "←" && e.clientX < peakPos.current.x) {
+        peakPos.current = { x: e.clientX, y: e.clientY };
+      }
+
+      // ピーク位置からの逆方向への移動を検出
+      const dxFromPeak = e.clientX - peakPos.current.x;
+      const dyFromPeak = e.clientY - peakPos.current.y;
+
+      // 方向転換のしきい値（小さくして反応を良くする）
+      const turnThreshold = Math.max(threshold * 0.5, 15);
+
+      const newDirection = getDirection(dxFromPeak, dyFromPeak, turnThreshold, angleTolerance);
+
+      // 新しい方向が検出され、現在の方向と異なる場合
+      if (newDirection && newDirection !== currentDir) {
+        lastDirection.current = newDirection;
+        gestureRef.current = [...gestureRef.current, newDirection];
+        setCurrentGesture(gestureRef.current);
+        // 新しい方向の起点としてピーク位置をリセット
+        peakPos.current = { x: e.clientX, y: e.clientY };
         setStartPos({ x: e.clientX, y: e.clientY });
       }
     },
